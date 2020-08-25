@@ -1,20 +1,25 @@
 import React, { useState, useEffect } from 'react'
 import Blog from './components/Blog'
 import Notification from './components/Notification'
-import blogService from './services/blogs'
 import Toggleable from './components/Toggleable'
 import BlogForm from './components/BlogForm'
-import LoginForm from './components/LoginForm'
 import Dropdown from 'react-bootstrap/Dropdown'
 import DropdownButton from 'react-bootstrap/DropdownButton'
+
+import blogService from './services/blogs'
+import loginService from './services/login'
+import storage from './utils/storage'
 
 const App = () => {
   const [blogs, setBlogs] = useState([])
   const [user, setUser] = useState(null)
-  const [errorMessage, setErrorMessage] = useState(null)
-  const [successMessage, setSuccessMessage] = useState(null)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [notification, setNotification] = useState(null)
   const [dropDownValue, setdropDownValue] = useState('Sort By')
   const [sort, setSort] = useState(null)
+
+  const blogFormRef = React.createRef()
 
   useEffect(() => {
     blogService.getAll().then(blogs =>
@@ -23,12 +28,8 @@ const App = () => {
   }, [])
 
   useEffect(() => {
-    const loggedUserJSON = window.localStorage.getItem('loggedNoteappUser')
-    if (loggedUserJSON) {
-      const user = JSON.parse(loggedUserJSON)
-      setUser(user)
-      blogService.setToken(user.token)
-    }
+    const user = storage.loadUser()
+    setUser(user)
 
     const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]')
     const currentTheme = localStorage.getItem('theme')
@@ -41,121 +42,127 @@ const App = () => {
     }
   }, [])
 
-  const updateUser = async (user) => {
-    blogService.setToken(user.token)
-    setUser(user)
+
+  const notifyWith = (message, type='success') => {
+    setNotification({
+      message, type
+    })
+    setTimeout(() => {
+      setNotification(null)
+    }, 5000)
+  }
+
+  const handleLogin = async (event) => {
+    event.preventDefault()
+    try {
+      const user = await loginService.login({
+        username, password
+      })
+
+      setUsername('')
+      setPassword('')
+      setUser(user)
+      notifyWith(`Welcome Back ${user.name}!`)
+      storage.saveUser(user)
+    } catch (exception) {
+      notifyWith('Incorrect username or password', 'error')
+      console.log('Wrong credentials')
+    }
   }
 
   const handleLogout = () => {
     setUser(null)
-    blogService.setToken(null)
-    window.localStorage.removeItem('loggedNoteappUser')
+    storage.logoutUser()
   }
 
-  const updateBlogs = (returnedBlog) => {
-    setBlogs(blogs.concat(returnedBlog))
-    setSuccessMessage(
-      `A new blog: ${returnedBlog.title} has been added`
-    )
-    setTimeout(() => {
-      setSuccessMessage(null)
-    }, 5000)
-  }
-
-  const updateBlogLikes = (blog) => {
-    const updatedblog = { ...blog, likes: blog.likes+1 }
-
-    blogService
-      .update(blog.id, updatedblog)
-      .then(returnedBlog => {
-        setBlogs(blogs.map(b => b.id !== returnedBlog.id ? b : returnedBlog))
-      })
-  }
-
-  const removeBlog = (blog) => {
-    if (window.confirm(`Remove blog ${blog.title} by ${blog.author}`)) {
-      blogService
-        .remove(blog.id)
-        .then(() => {
-          setBlogs(blogs.filter(b => b.id !== blog.id))
-        })
+  const handleNewBlog = async (blog) => {
+    try {
+      const returnedBlog = await blogService.create(blog)
+      blogFormRef.current.toggleVisibility()
+      setBlogs(blogs.concat(returnedBlog))
+      notifyWith(`A new blog: ${returnedBlog.title} has been added`)
+    } catch(exception) {
+      console.log(exception)
     }
   }
 
-  const setSortLikes = (e) => {
-    setdropDownValue(e)
-    setSort('likes')
+  const handleLike = async (blog) => {
+    const likedBlog = { ...blog, likes: blog.likes+1, user: blog.user.id  }
+    await blogService.update(likedBlog)
+    setBlogs(blogs.map(b => b.id === blog.id ? { ...blog, likes: blog.likes + 1 } : b))
   }
 
-  const sortByLikes = ((a, b) => (a.likes < b.likes ? 1 : -1 ))
-
-  const setSortTitle = (e) => {
-    setdropDownValue(e)
-    setSort('title')
+  const handleRemove = async (blog) => {
+    const ok = window.confirm(`Remove blog ${blog.title} by ${blog.author}`)
+    if (ok) {
+      await blogService.remove(blog.id)
+      setBlogs(blogs.filter(b => b.id !== blog.id))
+    }
   }
+
+  const updateSort = (e) => {
+    setdropDownValue(e)
+    setSort(e)
+  }
+
+  const sortByLikes = ((a, b) => b.likes - a.likes)
 
   const sortByTitle = ((a, b) =>  a.title.localeCompare(b.title))
 
-  const setSortAuthor = (e) => {
-    setdropDownValue(e)
-    setSort('author')
-  }
-
   const sortByAuthor= ((a, b) => a.author.localeCompare(b.author))
 
-  const loginForm = () => (
-    <LoginForm updateUser={updateUser} setErrorMessage={setErrorMessage}/>
-  )
-
   const displayBlogs = () => {
-    if (sort === null) {
+    let sortMethod
+
+    if (sort === 'Likes') {
+      sortMethod = (a,b) => sortByLikes(a,b)
+    }
+    else if (sort === 'Title') {
+      sortMethod = (a,b) => sortByAuthor(a,b)
+    }
+    else if (sort === 'Author') {
+      sortMethod = (a,b) => sortByTitle(a,b)
+    }
+    else {
       return (
         blogs.map((blog, index) =>
           <Blog
             num={index+1}
             key={blog.id}
             blog={blog}
-            addLike={() => updateBlogLikes(blog)}
-            removeBlog={() => removeBlog(blog)}
+            addLike={() => handleLike(blog)}
+            removeBlog={() => handleRemove(blog)}
             user={user}
           />
         )
       )
-    } else {
-      let sortMethod
-      switch(sort) {
-      case 'likes':
-        sortMethod = (a,b) => sortByLikes(a,b)
-        break
-
-      case 'title':
-        sortMethod = (a,b) => sortByTitle(a,b)
-        break
-
-      case 'author':
-        sortMethod = (a,b) => sortByAuthor(a,b)
-        break
-
-      default:
-        break
-      }
-
-      return (
-        blogs
-          .sort(sortMethod)
-          .map((blog, index) =>
-            <Blog
-              num={index+1}
-              key={blog.id}
-              blog={blog}
-              addLike={() => updateBlogLikes(blog)}
-              removeBlog={() => removeBlog(blog)}
-              user={user}
-            />
-          )
-      )
     }
+
+    return (
+      blogs
+        .sort(sortMethod)
+        .map((blog, index) =>
+          <Blog
+            num={index+1}
+            key={blog.id}
+            blog={blog}
+            addLike={() => handleLike(blog)}
+            removeBlog={() => handleRemove(blog)}
+            user={user}
+          />
+        )
+    )
   }
+
+  const darkMode = () => (
+    <div className="theme-switch-wrapper float-right">
+      <label className="theme-switch">
+        <input type="checkbox" id="checkbox" onClick={(e) => switchTheme(e)} />
+        <div className="slider round"></div>
+      </label>
+      <em></em>
+    </div>
+  )
 
   const switchTheme = (e) => {
     if (e.target.checked) {
@@ -168,52 +175,72 @@ const App = () => {
     }
   }
 
+  if ( !user ) {
+    return (
+      <div className='container'>
+        <Notification notification={notification}/>
+        {darkMode()}
+        <div className='text-center'>
+          <h1 className='mt-5 mb-3'>Please sign in</h1>
+          <form style={{ maxWidth : '480px', margin : 'auto' }} onSubmit={handleLogin}>
+            <input
+              type="text"
+              className="form-control mb-2"
+              placeholder='Username'
+              value={username}
+              name="Username"
+              required autoFocus
+              onChange={({ target }) => setUsername(target.value)}
+            />
+            <input
+              type="password"
+              className="form-control"
+              placeholder='Password'
+              value={password}
+              name="Password"
+              onChange={({ target }) => setPassword(target.value)}
+            />
+            <div className='mt-3'>
+              <button className='btn btn-lg btn-block btn-primary' type="submit">Sign In</button>
+            </div>
+
+          </form>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className='container'>
-      <Notification message={errorMessage} error={true}/>
-      <Notification message={successMessage} error={false}/>
-
-      <div className="theme-switch-wrapper float-right">
-        <label className="theme-switch">
-          <input type="checkbox" id="checkbox" onClick={(e) => switchTheme(e)} />
-          <div className="slider round"></div>
-        </label>
-        <em></em>
-      </div>
-
-
-      {user === null ?
-        loginForm() :
-        <div>
-          <div className='mt-5'>
-            <h1 className='text-center'>blogs</h1>
-            <button className='btn btn-outline-danger float-right' onClick={() => handleLogout()}>logout</button>
+      <Notification notification={notification}/>
+      {darkMode()}
+      <div>
+        <div className='mt-5'>
+          <h1 className='text-center'>blogs</h1>
+          <button className='btn btn-outline-danger float-right' onClick={() => handleLogout()}>logout</button>
+        </div>
+        <h2> Welcome {user.name} </h2>
+        <div className='mt-5'>
+          <Toggleable buttonLabel='Add New Blog' ref={blogFormRef}>
+            <BlogForm handleNewBlog={handleNewBlog} notifyWith={notifyWith}/>
+          </Toggleable>
+        </div>
+        <div className='mt-5'>
+          <div>
+            <h2>
+              bloglist
+              <DropdownButton title={dropDownValue} className="format float-right">
+                <Dropdown.Item as="button"><div onClick={(e) => updateSort(e.target.textContent)}>Likes</div></Dropdown.Item>
+                <Dropdown.Item as="button"><div onClick={(e) => updateSort(e.target.textContent)}>Title</div></Dropdown.Item>
+                <Dropdown.Item as="button"><div onClick={(e) => updateSort(e.target.textContent)}>Author</div></Dropdown.Item>
+              </DropdownButton>
+            </h2>
           </div>
-
-          <h2> Welcome {user.name} </h2>
-          <div className='mt-5'>
-            <Toggleable buttonLabel='Add New Blog'>
-              <BlogForm updateBlogs={updateBlogs} setErrorMessage={setErrorMessage}/>
-            </Toggleable>
-          </div>
-          <div className='mt-5'>
-            <div>
-              <h2>
-                bloglist
-                <DropdownButton title={dropDownValue} className="format float-right">
-                  <Dropdown.Item as="button"><div onClick={(e) => setSortLikes(e.target.textContent)}>Likes</div></Dropdown.Item>
-                  <Dropdown.Item as="button"><div onClick={(e) => setSortTitle(e.target.textContent)}>Title</div></Dropdown.Item>
-                  <Dropdown.Item as="button"><div onClick={(e) => setSortAuthor(e.target.textContent)}>Author</div></Dropdown.Item>
-                </DropdownButton>
-              </h2>
-            </div>
-
-            <div className='mt-4'>
-              {displayBlogs()}
-            </div>
+          <div className='mt-4'>
+            {displayBlogs()}
           </div>
         </div>
-      }
+      </div>
     </div>
   )
 }

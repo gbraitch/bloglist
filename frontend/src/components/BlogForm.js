@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
-import blogService from '../services/blogs'
 import PropTypes from 'prop-types'
 
-const BlogForm = ({ updateBlogs, setErrorMessage }) => {
+const BlogForm = ({ handleNewBlog, notifyWith }) => {
   const [blogTitle, setBlogTitle] = useState('')
   const [blogAuthor, setBlogAuthor] = useState('')
   const [blogURL, setBlogURL] = useState('')
@@ -10,24 +9,18 @@ const BlogForm = ({ updateBlogs, setErrorMessage }) => {
   const createBlog = async (event) => {
     event.preventDefault()
     try {
-      const blogObject = {
+      const newBlog = {
         title: blogTitle,
         author: blogAuthor,
         url: blogURL
       }
 
-      const returnedBlog = await blogService.create(blogObject)
-      updateBlogs(returnedBlog)
+      handleNewBlog(newBlog)
       setBlogTitle('')
       setBlogAuthor('')
       setBlogURL('')
     } catch (exception) {
-      setErrorMessage(
-        'Failed to add new blog'
-      )
-      setTimeout(() => {
-        setErrorMessage(null)
-      }, 5000)
+      notifyWith('Failed to add new blog', 'error')
       console.log('Failed to create blog')
     }
   }
@@ -74,8 +67,8 @@ const BlogForm = ({ updateBlogs, setErrorMessage }) => {
 }
 
 BlogForm.propTypes = {
-  updateBlogs: PropTypes.func.isRequired,
-  setErrorMessage: PropTypes.func.isRequired,
+  handleNewBlog: PropTypes.func.isRequired,
+  notifyWith: PropTypes.func.isRequired,
 }
 
 

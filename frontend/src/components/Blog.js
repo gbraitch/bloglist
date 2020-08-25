@@ -14,7 +14,6 @@ const Blog = ({ num, blog, addLike, removeBlog, user }) => {
       )
     }
     else {
-      console.log('not same user')
       return (
         <div>
           <button

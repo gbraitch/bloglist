@@ -1,14 +1,14 @@
 import React from 'react'
 import Alert from 'react-bootstrap/Alert'
 
-const Notification = ({ message, error }) => {
-  if (message === null) {
+const Notification = ({ notification }) => {
+  if (!notification) {
     return null
   }
 
   return (
-    <Alert  variant={`${error ? 'danger' : 'success'} alert ml-3`}>
-      {message}
+    <Alert  variant={`${notification.type === 'success' ? 'success' : 'danger'} alert ml-3`}>
+      {notification.message}
     </Alert>
   )
 }
